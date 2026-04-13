@@ -134,7 +134,7 @@ def main():
     train_zip = os.path.join(BIRD_DIR, "train.zip")
     if not os.path.exists(TRAIN_JSON):
         download_with_progress(BIRD_URLS["train"], train_zip)
-        extract_zip(train_zip, train_dir)
+        extract_zip(train_zip, BIRD_DIR)
     else:
         print("  Already downloaded. Skipping.")
 
