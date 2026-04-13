@@ -123,7 +123,10 @@ def normalize_bird_layout() -> None:
     """
     Newer BIRD dev.zip may extract under dev_20240627/ instead of dev/.
     Ensure dev.json and dev_databases/ end up under data/bird/dev/.
+    Also ensure train_databases/ ends up under the expected TRAIN_DB_DIR,
+    handling any extra nesting introduced by updated train.zip structures.
     """
+    # ── dev layout ────────────────────────────────────────────────────────────
     dev_parent = os.path.join(BIRD_DIR, "dev")
     os.makedirs(dev_parent, exist_ok=True)
 
@@ -146,6 +149,32 @@ def normalize_bird_layout() -> None:
             if os.path.isdir(dev_db_target):
                 shutil.rmtree(dev_db_target)
             shutil.move(p, dev_db_target)
+            break
+
+    # ── train layout ──────────────────────────────────────────────────────────
+    # The train.zip may ship with an unexpected top-level folder name.
+    # Find train_databases/ wherever it landed and move it to TRAIN_DB_DIR.
+    if not _dir_nonempty(TRAIN_DB_DIR):
+        for p in sorted(glob.glob(os.path.join(BIRD_DIR, "**", "train_databases"), recursive=True)):
+            if os.path.normpath(p) == os.path.normpath(TRAIN_DB_DIR):
+                continue
+            if not os.path.isdir(p) or not _dir_nonempty(p):
+                continue
+            print(f"  Normalizing train_databases:\n      {p}\n      → {TRAIN_DB_DIR}")
+            os.makedirs(os.path.dirname(TRAIN_DB_DIR), exist_ok=True)
+            if os.path.isdir(TRAIN_DB_DIR):
+                shutil.rmtree(TRAIN_DB_DIR)
+            shutil.move(p, TRAIN_DB_DIR)
+            break
+
+    # Also find and place train.json if it's missing from the standard location.
+    if not os.path.isfile(TRAIN_JSON):
+        for p in sorted(glob.glob(os.path.join(BIRD_DIR, "**", "train.json"), recursive=True)):
+            if os.path.normpath(p) == os.path.normpath(TRAIN_JSON):
+                continue
+            print(f"  Normalizing train.json:\n      {p}\n      → {TRAIN_JSON}")
+            os.makedirs(os.path.dirname(TRAIN_JSON), exist_ok=True)
+            shutil.move(p, TRAIN_JSON)
             break
 
 
@@ -251,8 +280,8 @@ def main():
     else:
         print("  Already downloaded. Skipping.")
 
-    # ── Fix dev layout (dev_20240627/ vs dev/) ─────────────────────────────────
-    print("\n── Normalizing BIRD layout (dev folder names) ─────────────")
+    # ── Fix any misplaced train/dev directories after extraction ──────────────
+    print("\n── Normalizing BIRD layout (train + dev folder names) ──────")
     normalize_bird_layout()
 
     # ── Verify and summarise ──────────────────────────────────────────────────

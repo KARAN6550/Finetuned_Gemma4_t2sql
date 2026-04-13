@@ -210,10 +210,15 @@ def find_bird_sqlite_path(db_id: str, db_dirs: List[str]) -> Optional[str]:
     """
     Locate {db_id}.sqlite under BIRD train or dev database roots.
     Supports standard layout, nested train_databases/, and db_id/sqlite/ (HF-style).
+    Falls back to a full recursive search under BIRD_DIR so misplaced extractions
+    (e.g. train.zip landing under an unexpected top-level folder) are still found.
     """
     import glob
 
-    for base in db_dirs:
+    # Include BIRD_DIR itself as a last-resort fallback search root.
+    search_dirs = list(db_dirs) + [BIRD_DIR]
+
+    for base in search_dirs:
         if not base or not os.path.isdir(base):
             continue
         candidates = [
