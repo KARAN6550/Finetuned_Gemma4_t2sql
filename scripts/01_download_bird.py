@@ -19,6 +19,7 @@
 # Runtime: ~5–10 minutes depending on connection speed (dataset is ~4 GB)
 # ─────────────────────────────────────────────────────────────────────────────
 
+import glob
 import os
 import json
 import shutil
@@ -118,6 +119,45 @@ def fix_extracted_structure() -> None:
                 pending.pop(dname, None)
 
 
+def normalize_bird_layout() -> None:
+    """
+    Newer BIRD dev.zip may extract under dev_20240627/ instead of dev/.
+    Ensure dev.json and dev_databases/ end up under data/bird/dev/.
+    """
+    dev_parent = os.path.join(BIRD_DIR, "dev")
+    os.makedirs(dev_parent, exist_ok=True)
+
+    if not os.path.isfile(DEV_JSON):
+        for p in sorted(glob.glob(os.path.join(BIRD_DIR, "**", "dev.json"), recursive=True)):
+            if os.path.normpath(p) == os.path.normpath(DEV_JSON):
+                continue
+            print(f"  Normalizing dev.json:\n      {p}\n      → {DEV_JSON}")
+            shutil.move(p, DEV_JSON)
+            break
+
+    dev_db_target = os.path.join(BIRD_DIR, "dev", "dev_databases")
+    if not _dir_nonempty(dev_db_target):
+        for p in sorted(glob.glob(os.path.join(BIRD_DIR, "**", "dev_databases"), recursive=True)):
+            if os.path.normpath(p) == os.path.normpath(dev_db_target):
+                continue
+            if not os.path.isdir(p) or not _dir_nonempty(p):
+                continue
+            print(f"  Normalizing dev_databases:\n      {p}\n      → {dev_db_target}")
+            if os.path.isdir(dev_db_target):
+                shutil.rmtree(dev_db_target)
+            shutil.move(p, dev_db_target)
+            break
+
+
+def _dir_nonempty(path: str) -> bool:
+    if not os.path.isdir(path):
+        return False
+    try:
+        return any(os.scandir(path))
+    except OSError:
+        return False
+
+
 def verify_bird_structure() -> bool:
     """Check that all expected files and directories exist."""
     required = [
@@ -210,6 +250,10 @@ def main():
         fix_extracted_structure()
     else:
         print("  Already downloaded. Skipping.")
+
+    # ── Fix dev layout (dev_20240627/ vs dev/) ─────────────────────────────────
+    print("\n── Normalizing BIRD layout (dev folder names) ─────────────")
+    normalize_bird_layout()
 
     # ── Verify and summarise ──────────────────────────────────────────────────
     print("\n── Verifying download structure ─────────────────────────────")

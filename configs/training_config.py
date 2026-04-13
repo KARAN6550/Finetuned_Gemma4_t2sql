@@ -21,13 +21,40 @@ BIRD_DIR            = os.path.join(DATA_DIR, "bird")
 _LOCAL_TRAIN_ROOT = os.path.join(PROJECT_ROOT, "Data", "train", "train")
 _STANDARD_TRAIN_ROOT = os.path.join(BIRD_DIR, "train")
 
+def _dir_nonempty(path: str) -> bool:
+    if not os.path.isdir(path):
+        return False
+    try:
+        return any(os.scandir(path))
+    except OSError:
+        return False
+
+
 def _resolve_train_root() -> str:
+    """
+    Prefer a local Data/train/train bundle only when it actually contains train.json
+    or a non-empty train_databases/. An empty train_databases/ must not win over
+    data/bird/train/ (e.g. Colab after downloading train.zip).
+    """
     if os.environ.get("BIRD_TRAIN_ROOT"):
         return os.environ["BIRD_TRAIN_ROOT"]
+
     local_json = os.path.join(_LOCAL_TRAIN_ROOT, "train.json")
     local_dbs = os.path.join(_LOCAL_TRAIN_ROOT, "train_databases")
-    if os.path.isfile(local_json) or os.path.isdir(local_dbs):
+    std_json = os.path.join(_STANDARD_TRAIN_ROOT, "train.json")
+    std_dbs = os.path.join(_STANDARD_TRAIN_ROOT, "train_databases")
+
+    local_ok = os.path.isfile(local_json) or _dir_nonempty(local_dbs)
+    std_ok = os.path.isfile(std_json) or _dir_nonempty(std_dbs)
+
+    if local_ok and not std_ok:
         return _LOCAL_TRAIN_ROOT
+    if std_ok and not local_ok:
+        return _STANDARD_TRAIN_ROOT
+    if local_ok and std_ok:
+        if os.path.isfile(local_json):
+            return _LOCAL_TRAIN_ROOT
+        return _STANDARD_TRAIN_ROOT
     return _STANDARD_TRAIN_ROOT
 
 _TRAIN_ROOT = _resolve_train_root()
