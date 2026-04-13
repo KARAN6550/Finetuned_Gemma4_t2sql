@@ -22,6 +22,7 @@
 
 import os
 import json
+import shutil
 import zipfile
 import urllib.request
 from pathlib import Path
@@ -40,11 +41,19 @@ BIRD_URLS = {
     "dev":   "https://bird-bench.oss-cn-beijing.aliyuncs.com/dev.zip",
 }
 
-# Filtered training JSON (cleaner subset recommended by BIRD team for fine-tuning)
+# Filtered training JSON — URL kept for reference; falls back to full set if 404.
 FILTERED_TRAIN_JSON_URL = (
     "https://raw.githubusercontent.com/AlibabaResearch/DAMO-ConvAI/"
     "main/bird/data/bird23-train-filtered.json"
 )
+
+# Expected file/directory names to locate after extraction
+_TARGETS = {
+    "train.json":      TRAIN_JSON,
+    "dev.json":        DEV_JSON,
+    "train_databases": os.path.join(BIRD_DIR, "train", "train_databases"),
+    "dev_databases":   os.path.join(BIRD_DIR, "dev",   "dev_databases"),
+}
 
 
 def download_with_progress(url: str, dest_path: str) -> None:
@@ -65,12 +74,48 @@ def download_with_progress(url: str, dest_path: str) -> None:
 
 
 def extract_zip(zip_path: str, extract_to: str) -> None:
-    """Extract a zip archive."""
+    """Extract a zip archive, always targeting BIRD_DIR so nested folders land correctly."""
     print(f"  Extracting: {zip_path}")
     with zipfile.ZipFile(zip_path, "r") as zf:
         zf.extractall(extract_to)
-    os.remove(zip_path)  # remove zip after extraction to save disk space
+    os.remove(zip_path)
     print(f"  Extracted to: {extract_to}")
+
+
+def fix_extracted_structure() -> None:
+    """
+    Walk BIRD_DIR and move any misplaced files/directories to their expected
+    canonical locations. This handles zip archives that ship with an extra
+    top-level folder (e.g. dev.zip → dev/dev/dev.json instead of dev/dev.json).
+    """
+    # Build a reverse lookup: basename → canonical destination path
+    pending = dict(_TARGETS)  # copy so we can pop as we resolve
+
+    for root, dirs, files in os.walk(BIRD_DIR):
+        root_path = Path(root)
+
+        # Check files
+        for fname in files:
+            if fname in pending:
+                src = root_path / fname
+                dst = Path(pending[fname])
+                if src != dst:
+                    dst.parent.mkdir(parents=True, exist_ok=True)
+                    print(f"  Moving {src}\n      → {dst}")
+                    shutil.move(str(src), str(dst))
+                pending.pop(fname, None)
+
+        # Check directories
+        for dname in list(dirs):
+            if dname in pending:
+                src = root_path / dname
+                dst = Path(pending[dname])
+                if src.resolve() != dst.resolve():
+                    dst.parent.mkdir(parents=True, exist_ok=True)
+                    print(f"  Moving {src}\n      → {dst}")
+                    shutil.move(str(src), str(dst))
+                    dirs.remove(dname)  # don't descend into moved dir
+                pending.pop(dname, None)
 
 
 def verify_bird_structure() -> bool:
@@ -122,52 +167,57 @@ def main():
     print("  STEP 1: Downloading BIRD Dataset")
     print("=" * 65)
 
-    # Create directories
+    # Create base directories
     os.makedirs(BIRD_DIR, exist_ok=True)
-    train_dir = os.path.join(BIRD_DIR, "train")
-    dev_dir   = os.path.join(BIRD_DIR, "dev")
-    os.makedirs(train_dir, exist_ok=True)
-    os.makedirs(dev_dir, exist_ok=True)
+    os.makedirs(os.path.join(BIRD_DIR, "train"), exist_ok=True)
+    os.makedirs(os.path.join(BIRD_DIR, "dev"),   exist_ok=True)
 
     # ── Download training split ───────────────────────────────────────────────
     print("\n[1/3] Downloading BIRD training split (~3.5 GB)...")
     train_zip = os.path.join(BIRD_DIR, "train.zip")
-    if not os.path.exists(TRAIN_JSON):
+    train_db_dir = os.path.join(BIRD_DIR, "train", "train_databases")
+    if not os.path.exists(TRAIN_JSON) or not os.path.exists(train_db_dir):
         download_with_progress(BIRD_URLS["train"], train_zip)
+        # Always extract to BIRD_DIR; the zip ships with a top-level "train/" folder.
         extract_zip(train_zip, BIRD_DIR)
+        fix_extracted_structure()
     else:
         print("  Already downloaded. Skipping.")
 
-    # ── Replace with filtered JSON ────────────────────────────────────────────
-    # The BIRD team recommends using the filtered 6,601-example subset for
-    # fine-tuning as it removes ~2,800 noisy/ambiguous training examples.
-    print("\n[2/3] Downloading BIRD23-train-filtered JSON (6,601 clean examples)...")
-    filtered_json_path = os.path.join(train_dir, "train.json")
-
-    # Check if the current train.json is already filtered
-    with open(filtered_json_path) as f:
-        existing = json.load(f)
-
-    if len(existing) > 7000:
-        # Still the original 9,428 — replace with filtered version
-        print(f"  Current train.json has {len(existing):,} examples (unfiltered).")
-        print("  Downloading filtered version (6,601 examples)...")
-        try:
-            download_with_progress(FILTERED_TRAIN_JSON_URL, filtered_json_path)
-            print("  Replaced with filtered version.")
-        except Exception as e:
-            print(f"  Warning: Could not download filtered JSON: {e}")
-            print("  Proceeding with full 9,428 examples.")
-            print("  Tip: Manually download from https://bird-bench.github.io/")
+    # ── Optionally replace with filtered JSON ─────────────────────────────────
+    # The BIRD team recommends the filtered 6,601-example subset for fine-tuning.
+    # The upstream URL is sometimes unavailable; we fall back to the full set.
+    print("\n[2/3] Checking BIRD23-train-filtered JSON (6,601 clean examples)...")
+    if os.path.exists(TRAIN_JSON):
+        with open(TRAIN_JSON) as f:
+            existing = json.load(f)
+        if len(existing) > 7000:
+            print(f"  Current train.json has {len(existing):,} examples (unfiltered).")
+            print("  Attempting to download filtered version (6,601 examples)...")
+            try:
+                download_with_progress(FILTERED_TRAIN_JSON_URL, TRAIN_JSON)
+                with open(TRAIN_JSON) as f:
+                    new_count = len(json.load(f))
+                print(f"  Replaced with filtered version ({new_count:,} examples).")
+            except Exception as e:
+                print(f"  Warning: Could not download filtered JSON: {e}")
+                print("  Proceeding with full 9,428 examples (no action needed).")
+                print("  Tip: Manually download from https://bird-bench.github.io/")
+        else:
+            print(f"  train.json already has {len(existing):,} examples (filtered). Skipping.")
     else:
-        print(f"  train.json already has {len(existing):,} examples (filtered). Skipping.")
+        print("  train.json not found — will be resolved after dev download.")
 
     # ── Download dev split ────────────────────────────────────────────────────
     print("\n[3/3] Downloading BIRD dev split (~0.5 GB)...")
     dev_zip = os.path.join(BIRD_DIR, "dev.zip")
-    if not os.path.exists(DEV_JSON):
+    dev_db_dir = os.path.join(BIRD_DIR, "dev", "dev_databases")
+    if not os.path.exists(DEV_JSON) or not os.path.exists(dev_db_dir):
         download_with_progress(BIRD_URLS["dev"], dev_zip)
-        extract_zip(dev_zip, dev_dir)
+        # Extract to BIRD_DIR — the zip ships with a top-level "dev/" folder, so
+        # extracting to dev_dir would create dev/dev/ nesting.
+        extract_zip(dev_zip, BIRD_DIR)
+        fix_extracted_structure()
     else:
         print("  Already downloaded. Skipping.")
 
