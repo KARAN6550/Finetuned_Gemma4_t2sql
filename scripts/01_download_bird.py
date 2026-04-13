@@ -3,15 +3,16 @@
 # STEP 1: Download the BIRD dataset (filtered training split + dev split)
 #
 # What this script does:
-#   1. Downloads BIRD23-train-filtered (6,601 high-quality training pairs)
-#   2. Downloads BIRD dev set (1,534 evaluation pairs)
-#   3. Downloads the corresponding .sqlite database files for both splits
-#   4. Verifies the download is complete and prints a summary
+#   1. Downloads BIRD train.zip (full train databases + unfiltered train.json)
+#   2. Overwrites train.json with Hugging Face birdsql/bird23-train-filtered (6,601 pairs)
+#   3. Downloads BIRD dev set (1,534 evaluation pairs)
+#   4. Downloads the corresponding .sqlite database files for both splits
+#   5. Verifies the download is complete and prints a summary
 #
 # Expected output structure after running:
 #   data/bird/
 #     train/
-#       train.json              ← 6,601 NL→SQL pairs
+#       train.json              ← 6,601 NL→SQL pairs (HF filtered; not the 9,428 from zip)
 #       train_databases/        ← .sqlite files (one per database)
 #     dev/
 #       dev.json                ← 1,534 NL→SQL pairs
@@ -29,7 +30,13 @@ from pathlib import Path
 
 import sys
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-from configs.training_config import DATA_DIR, BIRD_DIR, TRAIN_JSON, DEV_JSON
+from configs.training_config import (
+    DATA_DIR,
+    BIRD_DIR,
+    TRAIN_JSON,
+    DEV_JSON,
+    save_filtered_train_json,
+)
 
 
 # ── Download URLs ─────────────────────────────────────────────────────────────
@@ -40,12 +47,6 @@ BIRD_URLS = {
     "train": "https://bird-bench.oss-cn-beijing.aliyuncs.com/train.zip",
     "dev":   "https://bird-bench.oss-cn-beijing.aliyuncs.com/dev.zip",
 }
-
-# Filtered training JSON — URL kept for reference; falls back to full set if 404.
-FILTERED_TRAIN_JSON_URL = (
-    "https://raw.githubusercontent.com/AlibabaResearch/DAMO-ConvAI/"
-    "main/bird/data/bird23-train-filtered.json"
-)
 
 # Expected file/directory names to locate after extraction
 _TARGETS = {
@@ -184,29 +185,20 @@ def main():
     else:
         print("  Already downloaded. Skipping.")
 
-    # ── Optionally replace with filtered JSON ─────────────────────────────────
-    # The BIRD team recommends the filtered 6,601-example subset for fine-tuning.
-    # The upstream URL is sometimes unavailable; we fall back to the full set.
-    print("\n[2/3] Checking BIRD23-train-filtered JSON (6,601 clean examples)...")
-    if os.path.exists(TRAIN_JSON):
-        with open(TRAIN_JSON) as f:
-            existing = json.load(f)
-        if len(existing) > 7000:
-            print(f"  Current train.json has {len(existing):,} examples (unfiltered).")
-            print("  Attempting to download filtered version (6,601 examples)...")
-            try:
-                download_with_progress(FILTERED_TRAIN_JSON_URL, TRAIN_JSON)
-                with open(TRAIN_JSON) as f:
-                    new_count = len(json.load(f))
-                print(f"  Replaced with filtered version ({new_count:,} examples).")
-            except Exception as e:
-                print(f"  Warning: Could not download filtered JSON: {e}")
-                print("  Proceeding with full 9,428 examples (no action needed).")
-                print("  Tip: Manually download from https://bird-bench.github.io/")
-        else:
-            print(f"  train.json already has {len(existing):,} examples (filtered). Skipping.")
-    else:
-        print("  train.json not found — will be resolved after dev download.")
+    # ── Replace train.json with Hugging Face filtered split (6,601 examples) ─
+    # Same dataset as: load_dataset("birdsql/bird23-train-filtered")
+    print("\n[2/3] Writing BIRD23-train-filtered JSON from Hugging Face (6,601 examples)...")
+    try:
+        path = save_filtered_train_json(TRAIN_JSON)
+        with open(path) as f:
+            n = len(json.load(f))
+        print(f"  Saved filtered training labels to: {path}")
+        print(f"  Examples: {n:,}")
+    except Exception as e:
+        print(f"  Error: Could not load Hugging Face dataset: {e}")
+        print("  Install: pip install datasets")
+        print("  Or set HF_TOKEN if the hub requires authentication.")
+        raise
 
     # ── Download dev split ────────────────────────────────────────────────────
     print("\n[3/3] Downloading BIRD dev split (~0.5 GB)...")

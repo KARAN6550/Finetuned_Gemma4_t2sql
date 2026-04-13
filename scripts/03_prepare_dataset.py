@@ -3,7 +3,7 @@
 # STEP 3: Format BIRD examples into training prompts and save as HuggingFace datasets
 #
 # What this script does:
-#   1. Loads train.json and dev.json
+#   1. Loads training examples from Hugging Face birdsql/bird23-train-filtered and dev.json
 #   2. For each example:
 #      - Looks up the schema text from schemas.json (built in Step 2)
 #      - Fills in the prompt template: Schema + Evidence + Question + SQL
@@ -38,10 +38,14 @@ from tqdm import tqdm
 
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from configs.training_config import (
-    TRAIN_JSON, DEV_JSON, SCHEMA_CACHE,
-    TRAIN_DATASET_PATH, DEV_DATASET_PATH,
-    BASE_MODEL_ID, MAX_SEQ_LENGTH,
-    PROMPT_TEMPLATE
+    DEV_JSON,
+    SCHEMA_CACHE,
+    TRAIN_DATASET_PATH,
+    DEV_DATASET_PATH,
+    BASE_MODEL_ID,
+    MAX_SEQ_LENGTH,
+    PROMPT_TEMPLATE,
+    load_filtered_train_examples,
 )
 
 
@@ -174,7 +178,7 @@ def main():
 
     # ── Load inputs ───────────────────────────────────────────────────────────
     print("\n[1/4] Loading BIRD JSON files and schema cache...")
-    train_raw = load_bird_json(TRAIN_JSON)
+    train_raw = load_filtered_train_examples()
     dev_raw   = load_bird_json(DEV_JSON)
     schemas   = load_schemas(SCHEMA_CACHE)
     print(f"  Loaded {len(train_raw):,} training examples")

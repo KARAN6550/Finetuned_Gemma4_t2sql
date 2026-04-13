@@ -50,14 +50,33 @@ from trl import SFTTrainer, SFTConfig, DataCollatorForCompletionOnlyLM
 
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from configs.training_config import (
-    BASE_MODEL_ID, WANDB_PROJECT, WANDB_RUN_NAME,
-    QUANT_TYPE, USE_DOUBLE_QUANT, COMPUTE_DTYPE,
-    LORA_R, LORA_ALPHA, LORA_DROPOUT, LORA_TARGET_MODULES,
-    NUM_EPOCHS, PER_DEVICE_TRAIN_BATCH_SIZE, GRADIENT_ACCUMULATION_STEPS,
-    LEARNING_RATE, LR_SCHEDULER, WARMUP_RATIO, MAX_SEQ_LENGTH,
-    OPTIMIZER, SAVE_STEPS, LOGGING_STEPS, SEED,
-    TRAIN_DATASET_PATH, CHECKPOINT_DIR,
-    INFERENCE_PROMPT_TEMPLATE, MAX_NEW_TOKENS, TEMPERATURE,
+    BASE_MODEL_ID,
+    WANDB_PROJECT,
+    WANDB_RUN_NAME,
+    QUANT_TYPE,
+    USE_DOUBLE_QUANT,
+    COMPUTE_DTYPE,
+    LORA_R,
+    LORA_ALPHA,
+    LORA_DROPOUT,
+    LORA_TARGET_MODULES,
+    NUM_EPOCHS,
+    PER_DEVICE_TRAIN_BATCH_SIZE,
+    GRADIENT_ACCUMULATION_STEPS,
+    LEARNING_RATE,
+    LR_SCHEDULER,
+    WARMUP_RATIO,
+    MAX_SEQ_LENGTH,
+    OPTIMIZER,
+    SAVE_STEPS,
+    LOGGING_STEPS,
+    SEED,
+    TRAIN_DATASET_PATH,
+    CHECKPOINT_DIR,
+    INFERENCE_PROMPT_TEMPLATE,
+    MAX_NEW_TOKENS,
+    TEMPERATURE,
+    FILTERED_TRAIN_HF_ID,
 )
 
 
@@ -181,8 +200,7 @@ def main():
             "max_seq_length":     MAX_SEQ_LENGTH,
             "optimizer":          OPTIMIZER,
             "quantization":       f"4-bit {QUANT_TYPE}",
-            "dataset":            "BIRD23-train-filtered",
-            "num_train_examples": 6601,
+            "dataset":            FILTERED_TRAIN_HF_ID,
         },
         tags=["text-to-sql", "qlora", "gemma4", "bird"],
     )
@@ -247,6 +265,7 @@ def main():
     print("\n[5/7] Loading training dataset...")
     train_dataset = load_from_disk(TRAIN_DATASET_PATH)
     print(f"  Loaded {len(train_dataset):,} training examples")
+    wandb.config.update({"num_train_examples": len(train_dataset)})
 
     # Load a few dev examples for the sample prediction callback
     from datasets import load_from_disk as lfd

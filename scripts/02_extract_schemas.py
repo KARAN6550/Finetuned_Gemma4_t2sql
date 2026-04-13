@@ -3,7 +3,7 @@
 # STEP 2: Extract database schemas from all .sqlite files
 #
 # What this script does:
-#   1. Opens every .sqlite database file in train_databases/ and dev_databases/
+#   1. Opens every .sqlite for db_ids in the filtered train split + dev (HF train labels)
 #   2. Reads the CREATE TABLE statements for each table
 #   3. Enriches the schema with sample values (top 3 per column)
 #      → This helps the model understand what values look like
@@ -34,7 +34,11 @@ from tqdm import tqdm
 import sys
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from configs.training_config import (
-    TRAIN_DB_DIR, DEV_DB_DIR, SCHEMA_CACHE, TRAIN_JSON, DEV_JSON
+    TRAIN_DB_DIR,
+    DEV_DB_DIR,
+    SCHEMA_CACHE,
+    DEV_JSON,
+    load_filtered_train_examples,
 )
 
 
@@ -161,14 +165,15 @@ def find_db_path(db_id: str, db_dirs: list) -> str | None:
 
 
 def collect_all_db_ids() -> set:
-    """Collect every db_id referenced in train.json and dev.json."""
+    """Collect every db_id referenced in filtered train + dev (same split as fine-tuning)."""
     db_ids = set()
-    for json_path in [TRAIN_JSON, DEV_JSON]:
-        if os.path.exists(json_path):
-            with open(json_path) as f:
-                data = json.load(f)
-            for ex in data:
-                db_ids.add(ex["db_id"])
+    for ex in load_filtered_train_examples():
+        db_ids.add(ex["db_id"])
+    if os.path.exists(DEV_JSON):
+        with open(DEV_JSON) as f:
+            dev_data = json.load(f)
+        for ex in dev_data:
+            db_ids.add(ex["db_id"])
     return db_ids
 
 

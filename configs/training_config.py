@@ -6,7 +6,7 @@
 
 import os
 from dataclasses import dataclass, field
-from typing import List
+from typing import List, Optional
 
 
 # ── Paths ────────────────────────────────────────────────────────────────────
@@ -15,10 +15,16 @@ PROJECT_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 
 DATA_DIR            = os.path.join(PROJECT_ROOT, "data")
 BIRD_DIR            = os.path.join(DATA_DIR, "bird")
-TRAIN_JSON          = os.path.join(BIRD_DIR, "train", "train.json")
-TRAIN_DB_DIR        = os.path.join(BIRD_DIR, "train", "train_databases")
+# Default: data/bird/train/ — override with env BIRD_TRAIN_ROOT if you placed the
+# train zip contents elsewhere (e.g. a manual download under Data/train/...).
+_TRAIN_ROOT = os.environ.get("BIRD_TRAIN_ROOT", os.path.join(BIRD_DIR, "train"))
+TRAIN_JSON          = os.path.join(_TRAIN_ROOT, "train.json")
+TRAIN_DB_DIR        = os.path.join(_TRAIN_ROOT, "train_databases")
 DEV_JSON            = os.path.join(BIRD_DIR, "dev", "dev.json")
 DEV_DB_DIR          = os.path.join(BIRD_DIR, "dev", "dev_databases")
+
+# Official filtered training split (6,601 examples) — use for all training / schema db_id collection.
+FILTERED_TRAIN_HF_ID = "birdsql/bird23-train-filtered"
 
 SCHEMA_CACHE        = os.path.join(DATA_DIR, "schemas.json")       # saved after Step 2
 TRAIN_DATASET_PATH  = os.path.join(DATA_DIR, "train_dataset")      # HF dataset after Step 3
@@ -122,3 +128,39 @@ Generate a valid SQL query to answer the following question using the database s
 
 ### SQL Query
 """
+
+
+def load_filtered_train_examples() -> list:
+    """
+    Load the BIRD23 filtered training split from Hugging Face (same 6,601 examples
+    as birdsql/bird23-train-filtered). Matches the JSON shape used elsewhere
+    (db_id, question, evidence, SQL, optional difficulty).
+    """
+    from datasets import load_dataset
+
+    ds = load_dataset(FILTERED_TRAIN_HF_ID, split="train")
+    examples = []
+    for row in ds:
+        sql = row.get("SQL")
+        if sql is None:
+            sql = row.get("sql")
+        examples.append({
+            "db_id": row["db_id"],
+            "question": row["question"],
+            "evidence": (row.get("evidence") or "").strip(),
+            "SQL": (sql or "").strip(),
+            "difficulty": row.get("difficulty", "unknown"),
+        })
+    return examples
+
+
+def save_filtered_train_json(dest_path: Optional[str] = None) -> str:
+    """Write filtered training examples to train.json (default: TRAIN_JSON)."""
+    import json
+
+    path = dest_path or TRAIN_JSON
+    os.makedirs(os.path.dirname(path), exist_ok=True)
+    data = load_filtered_train_examples()
+    with open(path, "w", encoding="utf-8") as f:
+        json.dump(data, f, indent=2, ensure_ascii=False)
+    return path

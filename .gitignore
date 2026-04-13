@@ -1,0 +1,21 @@
+# Local datasets (large)
+Data/
+data/
+
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.eggs/
+dist/
+build/
+
+# Training outputs
+outputs/
+wandb/
+.wandb/
+
+# Environment / secrets
+.env
+.env.*
+*.sqlite
