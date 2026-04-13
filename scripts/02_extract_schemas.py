@@ -177,13 +177,19 @@ def main():
     db_ids = collect_all_db_ids()
     print(f"  Total unique databases to process: {len(db_ids)}")
 
+    # Report stale "unavailable" entries that will be re-extracted
+    stale = [k for k, v in schemas.items() if v.startswith("-- Schema unavailable")]
+    if stale:
+        print(f"  Found {len(stale)} stale 'unavailable' entries — will re-extract.")
+
     # Process each database
     failed = []
     new_count = 0
 
     for db_id in tqdm(sorted(db_ids), desc="Extracting schemas"):
-        if db_id in schemas:
-            continue  # already cached
+        # Skip only entries that contain a real schema, not placeholder "unavailable" text
+        if db_id in schemas and not schemas[db_id].startswith("-- Schema unavailable"):
+            continue
 
         db_path = find_bird_sqlite_path(db_id, [TRAIN_DB_DIR, DEV_DB_DIR])
 

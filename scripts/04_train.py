@@ -28,6 +28,7 @@ import os
 import sys
 import json
 import torch
+import torch.nn as nn
 import wandb
 from tqdm import tqdm
 from datasets import load_from_disk
@@ -47,6 +48,60 @@ from peft import (
     prepare_model_for_kbit_training,
 )
 from trl import SFTTrainer, SFTConfig, DataCollatorForCompletionOnlyLM
+
+
+# ── Gemma 4 compatibility patches ─────────────────────────────────────────────
+# Bug: PEFT rejects Gemma4ClippableLinear because it inherits from nn.Module, not
+# nn.Linear. Monkey-patching it to inherit from nn.Linear fixes the type check
+# while preserving the optional input/output clamping behaviour.
+# Must run BEFORE any AutoModelForCausalLM.from_pretrained() call.
+def _patch_gemma4_clippable_linear():
+    try:
+        from transformers.models.gemma4 import modeling_gemma4
+
+        class _PatchedClippableLinear(nn.Linear):
+            def __init__(self, config, in_features, out_features):
+                nn.Linear.__init__(self, in_features, out_features, bias=False)
+                self.use_clipped_linears = getattr(config, "use_clipped_linears", False)
+                if self.use_clipped_linears:
+                    self.register_buffer("input_min",  torch.tensor(-float("inf")))
+                    self.register_buffer("input_max",  torch.tensor( float("inf")))
+                    self.register_buffer("output_min", torch.tensor(-float("inf")))
+                    self.register_buffer("output_max", torch.tensor( float("inf")))
+
+            def forward(self, x):
+                if self.use_clipped_linears:
+                    x = torch.clamp(x, self.input_min, self.input_max)
+                out = nn.Linear.forward(self, x)
+                if self.use_clipped_linears:
+                    out = torch.clamp(out, self.output_min, self.output_max)
+                return out
+
+        modeling_gemma4.Gemma4ClippableLinear = _PatchedClippableLinear
+        print("  [patch] Gemma4ClippableLinear → nn.Linear applied.")
+    except (ImportError, AttributeError):
+        pass  # not Gemma 4, or transformers version doesn't need the patch
+
+
+# ── Gemma 4 custom data collator ──────────────────────────────────────────────
+# Gemma 4 requires token_type_ids and mm_token_type_ids (multimodal token type IDs)
+# even during text-only training. Standard collators don't produce these fields.
+class GemmaCompletionCollator(DataCollatorForCompletionOnlyLM):
+    """
+    Extends DataCollatorForCompletionOnlyLM to inject the two extra fields
+    Gemma 4 requires in its forward pass even when there is no multimodal input:
+      - token_type_ids   (all zeros)
+      - mm_token_type_ids (all zeros)
+    Without these the model raises: ValueError: mm_token_type_ids is required.
+    """
+
+    def __call__(self, features):
+        batch = super().__call__(features)
+        batch_size, seq_len = batch["input_ids"].shape
+        zeros = torch.zeros(batch_size, seq_len, dtype=torch.long)
+        batch["token_type_ids"]    = zeros
+        batch["mm_token_type_ids"] = zeros
+        return batch
 
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from configs.training_config import (
@@ -206,6 +261,10 @@ def main():
     )
     print(f"  W&B run: {wandb.run.url}")
 
+    # ── Gemma 4 patches (must run before model load) ──────────────────────────
+    print("\n[2b/7] Applying Gemma 4 compatibility patches...")
+    _patch_gemma4_clippable_linear()
+
     # ── Load 4-bit quantized base model ───────────────────────────────────────
     print(f"\n[3/7] Loading {BASE_MODEL_ID} in 4-bit NF4 quantization...")
     print("  This downloads ~4 GB on first run. Subsequent runs use HF cache.")
@@ -319,11 +378,11 @@ def main():
         ddp_find_unused_parameters=False,
     )
 
-    # CompletionOnlyLM collator: computes loss ONLY on SQL tokens, not schema/question
-    # This is critical — you don't want to penalize the model for the input tokens
+    # GemmaCompletionCollator: computes loss ONLY on SQL tokens AND injects the
+    # token_type_ids / mm_token_type_ids fields Gemma 4 requires in its forward pass.
     response_template = "### SQL Query\n"
     response_template_ids = tokenizer.encode(response_template, add_special_tokens=False)
-    data_collator = DataCollatorForCompletionOnlyLM(
+    data_collator = GemmaCompletionCollator(
         response_template=response_template_ids,
         tokenizer=tokenizer,
     )

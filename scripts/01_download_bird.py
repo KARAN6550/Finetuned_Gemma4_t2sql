@@ -293,7 +293,29 @@ def main():
         print("✓ STEP 1 COMPLETE — Run scripts/02_extract_schemas.py next.\n")
     else:
         print("\n✗ Some files are missing. Check URLs and try again.")
-        print("  Alternatively, manually download from: https://bird-bench.github.io/\n")
+        print("  Alternatively, manually download from: https://bird-bench.github.io/")
+
+        # ── Diagnostic: show what actually landed under BIRD_DIR ──────────────
+        print(f"\n── Diagnostic: top-level contents of {BIRD_DIR} ──────────────")
+        try:
+            import glob as _glob
+            all_paths = sorted(_glob.glob(os.path.join(BIRD_DIR, "**"), recursive=True))
+            # Show dirs first, then files (limit output to 60 entries)
+            shown = 0
+            for p in all_paths:
+                if shown >= 60:
+                    print(f"  ... ({len(all_paths) - shown} more entries)")
+                    break
+                rel = os.path.relpath(p, BIRD_DIR)
+                if os.path.isdir(p):
+                    print(f"  [dir]  {rel}/")
+                else:
+                    size_mb = os.path.getsize(p) / 1e6
+                    print(f"  [file] {rel}  ({size_mb:.1f} MB)")
+                shown += 1
+        except Exception as diag_err:
+            print(f"  (diagnostic failed: {diag_err})")
+        print()
 
 
 if __name__ == "__main__":

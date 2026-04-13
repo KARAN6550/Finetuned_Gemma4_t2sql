@@ -1,22 +1,22 @@
 # Core training stack
-torch==2.3.1
-transformers==4.47.0
-peft==0.13.0
-trl==0.12.0
-bitsandbytes==0.44.0
-accelerate==0.34.0
+torch>=2.3.1
+transformers>=5.5.0      # Gemma 4 (model_type=gemma4) requires 5.5.0+
+peft>=0.18.0             # Gemma4ClippableLinear support
+trl>=1.0.0               # SFTTrainer / SFTConfig (stable v1 API)
+bitsandbytes>=0.44.0
+accelerate>=0.34.0
 
 # Dataset handling
-datasets==3.1.0
-huggingface_hub==0.26.0
+datasets>=3.1.0
+huggingface_hub>=0.26.0
 
 # Experiment tracking
-wandb==0.18.0
+wandb>=0.18.0
 
 # Evaluation
-sqlparse==0.5.1
-pandas==2.2.3
+sqlparse>=0.5.1
+pandas>=2.2.3
 
 # Utilities
-tqdm==4.67.0
-python-dotenv==1.0.1
+tqdm>=4.67.0
+python-dotenv>=1.0.1

@@ -194,13 +194,17 @@ def main():
 
     # ── Token length analysis ─────────────────────────────────────────────────
     print("\n[3/4] Analyzing token lengths (loading tokenizer — may take a minute)...")
-    tokenizer = AutoTokenizer.from_pretrained(BASE_MODEL_ID)
-
-    train_token_stats = check_token_lengths(train_formatted, tokenizer, MAX_SEQ_LENGTH)
-    dev_token_stats   = check_token_lengths(dev_formatted,   tokenizer, MAX_SEQ_LENGTH)
-
-    print_stats("Training", train_formatted, train_token_stats)
-    print_stats("Dev",      dev_formatted,   dev_token_stats)
+    try:
+        tokenizer = AutoTokenizer.from_pretrained(BASE_MODEL_ID, trust_remote_code=True)
+        train_token_stats = check_token_lengths(train_formatted, tokenizer, MAX_SEQ_LENGTH)
+        dev_token_stats   = check_token_lengths(dev_formatted,   tokenizer, MAX_SEQ_LENGTH)
+        print_stats("Training", train_formatted, train_token_stats)
+        print_stats("Dev",      dev_formatted,   dev_token_stats)
+    except Exception as e:
+        print(f"  Warning: Could not load tokenizer for length analysis: {e}")
+        print("  Gemma 4 requires transformers>=5.5.0 — upgrade with:")
+        print("    pip install 'transformers>=5.5.0'")
+        print("  Skipping token statistics. Datasets will still be saved.")
 
     # ── Save as HuggingFace Datasets ──────────────────────────────────────────
     print("\n[4/4] Saving datasets to disk...")
