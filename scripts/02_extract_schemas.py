@@ -39,6 +39,7 @@ from configs.training_config import (
     SCHEMA_CACHE,
     DEV_JSON,
     load_filtered_train_examples,
+    find_bird_sqlite_path,
 )
 
 
@@ -147,23 +148,6 @@ def extract_schema_for_db(db_path: str) -> str:
         conn.close()
 
 
-def find_db_path(db_id: str, db_dirs: list) -> str | None:
-    """
-    Search multiple database directories for a given db_id.
-    Returns full path to the .sqlite file, or None if not found.
-    """
-    for db_dir in db_dirs:
-        # Common BIRD layout: db_dir/db_id/db_id.sqlite
-        candidate = os.path.join(db_dir, db_id, f"{db_id}.sqlite")
-        if os.path.exists(candidate):
-            return candidate
-        # Sometimes the sqlite file is directly in db_dir
-        candidate2 = os.path.join(db_dir, f"{db_id}.sqlite")
-        if os.path.exists(candidate2):
-            return candidate2
-    return None
-
-
 def collect_all_db_ids() -> set:
     """Collect every db_id referenced in filtered train + dev (same split as fine-tuning)."""
     db_ids = set()
@@ -201,7 +185,7 @@ def main():
         if db_id in schemas:
             continue  # already cached
 
-        db_path = find_db_path(db_id, [TRAIN_DB_DIR, DEV_DB_DIR])
+        db_path = find_bird_sqlite_path(db_id, [TRAIN_DB_DIR, DEV_DB_DIR])
 
         if db_path is None:
             print(f"\n  ✗ Could not find .sqlite for db_id='{db_id}'")

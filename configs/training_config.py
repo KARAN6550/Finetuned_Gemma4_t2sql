@@ -15,9 +15,22 @@ PROJECT_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 
 DATA_DIR            = os.path.join(PROJECT_ROOT, "data")
 BIRD_DIR            = os.path.join(DATA_DIR, "bird")
-# Default: data/bird/train/ — override with env BIRD_TRAIN_ROOT if you placed the
-# train zip contents elsewhere (e.g. a manual download under Data/train/...).
-_TRAIN_ROOT = os.environ.get("BIRD_TRAIN_ROOT", os.path.join(BIRD_DIR, "train"))
+
+# Train bundle: prefer local `Data/train/train/` (train.json + train_databases/) if present;
+# else `data/bird/train/` after scripts/01_download_bird.py. Override with BIRD_TRAIN_ROOT.
+_LOCAL_TRAIN_ROOT = os.path.join(PROJECT_ROOT, "Data", "train", "train")
+_STANDARD_TRAIN_ROOT = os.path.join(BIRD_DIR, "train")
+
+def _resolve_train_root() -> str:
+    if os.environ.get("BIRD_TRAIN_ROOT"):
+        return os.environ["BIRD_TRAIN_ROOT"]
+    local_json = os.path.join(_LOCAL_TRAIN_ROOT, "train.json")
+    local_dbs = os.path.join(_LOCAL_TRAIN_ROOT, "train_databases")
+    if os.path.isfile(local_json) or os.path.isdir(local_dbs):
+        return _LOCAL_TRAIN_ROOT
+    return _STANDARD_TRAIN_ROOT
+
+_TRAIN_ROOT = _resolve_train_root()
 TRAIN_JSON          = os.path.join(_TRAIN_ROOT, "train.json")
 TRAIN_DB_DIR        = os.path.join(_TRAIN_ROOT, "train_databases")
 DEV_JSON            = os.path.join(BIRD_DIR, "dev", "dev.json")
@@ -164,3 +177,29 @@ def save_filtered_train_json(dest_path: Optional[str] = None) -> str:
     with open(path, "w", encoding="utf-8") as f:
         json.dump(data, f, indent=2, ensure_ascii=False)
     return path
+
+
+def find_bird_sqlite_path(db_id: str, db_dirs: List[str]) -> Optional[str]:
+    """
+    Locate {db_id}.sqlite under BIRD train or dev database roots.
+    Supports standard layout, nested train_databases/, and db_id/sqlite/ (HF-style).
+    """
+    import glob
+
+    for base in db_dirs:
+        if not base or not os.path.isdir(base):
+            continue
+        candidates = [
+            os.path.join(base, db_id, f"{db_id}.sqlite"),
+            os.path.join(base, f"{db_id}.sqlite"),
+            os.path.join(base, "train_databases", db_id, f"{db_id}.sqlite"),
+            os.path.join(base, db_id, "sqlite", f"{db_id}.sqlite"),
+        ]
+        for p in candidates:
+            if os.path.isfile(p):
+                return p
+        pattern = os.path.join(base, "**", f"{db_id}.sqlite")
+        matches = glob.glob(pattern, recursive=True)
+        if matches:
+            return matches[0]
+    return None

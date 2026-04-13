@@ -44,11 +44,21 @@ from peft import PeftModel
 
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from configs.training_config import (
-    BASE_MODEL_ID, CHECKPOINT_DIR, DEV_DATASET_PATH, DEV_DB_DIR,
-    INFERENCE_PROMPT_TEMPLATE, MAX_NEW_TOKENS, TEMPERATURE,
-    QUANT_TYPE, USE_DOUBLE_QUANT, COMPUTE_DTYPE,
-    WANDB_PROJECT, WANDB_RUN_NAME, OUTPUT_DIR,
+    BASE_MODEL_ID,
+    CHECKPOINT_DIR,
+    DEV_DATASET_PATH,
+    DEV_DB_DIR,
+    INFERENCE_PROMPT_TEMPLATE,
+    MAX_NEW_TOKENS,
+    TEMPERATURE,
+    QUANT_TYPE,
+    USE_DOUBLE_QUANT,
+    COMPUTE_DTYPE,
+    WANDB_PROJECT,
+    WANDB_RUN_NAME,
+    OUTPUT_DIR,
     MAX_SEQ_LENGTH,
+    find_bird_sqlite_path,
 )
 
 
@@ -101,17 +111,6 @@ def generate_sql(
 
 
 # ── Execution Accuracy ─────────────────────────────────────────────────────────
-
-def find_db_path(db_id: str) -> str | None:
-    """Find the .sqlite file for a given db_id in dev_databases/."""
-    candidate = os.path.join(DEV_DB_DIR, db_id, f"{db_id}.sqlite")
-    if os.path.exists(candidate):
-        return candidate
-    candidate2 = os.path.join(DEV_DB_DIR, f"{db_id}.sqlite")
-    if os.path.exists(candidate2):
-        return candidate2
-    return None
-
 
 def execute_sql(db_path: str, sql: str) -> tuple[bool, any]:
     """
@@ -238,7 +237,7 @@ def main():
         evidence   = evidence[1].split("\n### Question")[0].strip() if len(evidence) > 1 else ""
 
         schema_text = schemas.get(db_id, "")
-        db_path     = find_db_path(db_id)
+        db_path     = find_bird_sqlite_path(db_id, [DEV_DB_DIR])
 
         if db_path is None:
             results.append({"correct": False, "valid_sql": False, "error": "db_not_found"})

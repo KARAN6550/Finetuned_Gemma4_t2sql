@@ -10,13 +10,11 @@
 #   5. Verifies the download is complete and prints a summary
 #
 # Expected output structure after running:
-#   data/bird/
-#     train/
-#       train.json              ← 6,601 NL→SQL pairs (HF filtered; not the 9,428 from zip)
-#       train_databases/        ← .sqlite files (one per database)
-#     dev/
-#       dev.json                ← 1,534 NL→SQL pairs
-#       dev_databases/          ← .sqlite files for evaluation
+#   Local train bundle (default when present): Data/train/train/
+#     train.json                ← 6,601 NL→SQL pairs (HF filtered)
+#     train_databases/          ← .sqlite files (one per database)
+#   Or after downloading: data/bird/train/ with the same files under train/
+#     dev/                      ← dev.json + dev_databases/ (always under data/bird/dev/)
 #
 # Runtime: ~5–10 minutes depending on connection speed (dataset is ~4 GB)
 # ─────────────────────────────────────────────────────────────────────────────
@@ -34,6 +32,7 @@ from configs.training_config import (
     DATA_DIR,
     BIRD_DIR,
     TRAIN_JSON,
+    TRAIN_DB_DIR,
     DEV_JSON,
     save_filtered_train_json,
 )
@@ -52,8 +51,8 @@ BIRD_URLS = {
 _TARGETS = {
     "train.json":      TRAIN_JSON,
     "dev.json":        DEV_JSON,
-    "train_databases": os.path.join(BIRD_DIR, "train", "train_databases"),
-    "dev_databases":   os.path.join(BIRD_DIR, "dev",   "dev_databases"),
+    "train_databases": TRAIN_DB_DIR,
+    "dev_databases":   os.path.join(BIRD_DIR, "dev", "dev_databases"),
 }
 
 
@@ -124,7 +123,7 @@ def verify_bird_structure() -> bool:
     required = [
         TRAIN_JSON,
         DEV_JSON,
-        os.path.join(BIRD_DIR, "train", "train_databases"),
+        TRAIN_DB_DIR,
         os.path.join(BIRD_DIR, "dev", "dev_databases"),
     ]
     all_ok = True
@@ -176,8 +175,7 @@ def main():
     # ── Download training split ───────────────────────────────────────────────
     print("\n[1/3] Downloading BIRD training split (~3.5 GB)...")
     train_zip = os.path.join(BIRD_DIR, "train.zip")
-    train_db_dir = os.path.join(BIRD_DIR, "train", "train_databases")
-    if not os.path.exists(TRAIN_JSON) or not os.path.exists(train_db_dir):
+    if not os.path.exists(TRAIN_JSON) or not os.path.exists(TRAIN_DB_DIR):
         download_with_progress(BIRD_URLS["train"], train_zip)
         # Always extract to BIRD_DIR; the zip ships with a top-level "train/" folder.
         extract_zip(train_zip, BIRD_DIR)
